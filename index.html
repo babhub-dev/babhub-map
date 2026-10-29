@@ -3,20 +3,16 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0,
+             maximum-scale=1.0, user-scalable=no"
+  />
   <title>밥허브 카카오맵</title>
 
   <style>
-    html, body {
+    html, body, #map {
       margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-    }
-
-    #map {
       width: 100%;
       height: 100%;
     }
@@ -25,7 +21,6 @@
       display: none;
       padding: 20px;
       color: #c62828;
-      font-size: 14px;
     }
   </style>
 </head>
@@ -34,11 +29,13 @@
   <div id="map"></div>
   <div id="error"></div>
 
-  <script
-    src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=2f35a73f2a362abf560cc7ca7e582092&autoload=false">
-  </script>
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=2f35a73f2a362abf560cc7ca7e582092&autoload=false"></script>
 
   <script>
+    let map = null;
+    let markers = [];
+    let activeInfoWindow = null;
+
     function sendMessage(type, message) {
       if (window.ReactNativeWebView) {
         window.ReactNativeWebView.postMessage(
@@ -48,30 +45,126 @@
     }
 
     function showError(message) {
-      document.getElementById("map").style.display = "none";
-      const error = document.getElementById("error");
-      error.style.display = "block";
-      error.textContent = message;
+      document.getElementById("error").style.display = "block";
+      document.getElementById("error").textContent = message;
       sendMessage("ERROR", message);
     }
 
+    function clearMarkers() {
+      if (activeInfoWindow) {
+        activeInfoWindow.close();
+        activeInfoWindow = null;
+      }
+
+      markers.forEach(marker => marker.setMap(null));
+      markers = [];
+    }
+
+    function setRestaurants(restaurants) {
+      if (!map || !Array.isArray(restaurants)) {
+        return;
+      }
+
+      clearMarkers();
+
+      const bounds = new kakao.maps.LatLngBounds();
+      let validCount = 0;
+
+      restaurants.forEach(restaurant => {
+        const latitude = Number(restaurant.latitude);
+        const longitude = Number(restaurant.longitude);
+
+        if (
+          !Number.isFinite(latitude) ||
+          !Number.isFinite(longitude) ||
+          latitude < -90 || latitude > 90 ||
+          longitude < -180 || longitude > 180
+        ) {
+          return;
+        }
+
+        const position = new kakao.maps.LatLng(
+          latitude,
+          longitude
+        );
+
+        const marker = new kakao.maps.Marker({
+          position: position,
+          map: map
+        });
+
+        const infoContent = document.createElement("div");
+        infoContent.style.padding = "10px";
+        infoContent.style.minWidth = "150px";
+
+        const name = document.createElement("strong");
+        name.textContent = String(restaurant.name || "");
+
+        const address = document.createElement("div");
+        address.style.fontSize = "12px";
+        address.style.marginTop = "5px";
+        address.textContent = String(
+          restaurant.address || ""
+        );
+
+        infoContent.appendChild(name);
+        infoContent.appendChild(address);
+
+        const infoWindow = new kakao.maps.InfoWindow({
+          content: infoContent,
+          removable: true
+        });
+
+        kakao.maps.event.addListener(
+          marker,
+          "click",
+          function () {
+            if (activeInfoWindow) {
+              activeInfoWindow.close();
+            }
+
+            infoWindow.open(map, marker);
+            activeInfoWindow = infoWindow;
+
+            sendMessage("MARKER_CLICK", {
+              id: restaurant.id,
+              name: restaurant.name
+            });
+          }
+        );
+
+        markers.push(marker);
+        bounds.extend(position);
+        validCount++;
+      });
+
+      if (validCount > 0) {
+        map.setBounds(bounds);
+      }
+
+      sendMessage("MARKERS_UPDATED", validCount);
+    }
+
+    window.setRestaurants = setRestaurants;
+
     if (typeof kakao === "undefined" || !kakao.maps) {
-      showError("카카오맵 SDK를 불러오지 못했습니다.");
+      showError("카카오맵 SDK 로딩 실패");
     } else {
       kakao.maps.load(function () {
         try {
-          const container = document.getElementById("map");
+          map = new kakao.maps.Map(
+            document.getElementById("map"),
+            {
+              center: new kakao.maps.LatLng(
+                37.5665, 126.9780
+              ),
+              level: 4
+            }
+          );
 
-          const options = {
-            center: new kakao.maps.LatLng(37.5665, 126.9780),
-            level: 4
-          };
-
-          const map = new kakao.maps.Map(container, options);
-
-          sendMessage("READY", "카카오맵 로딩 완료");
+          sendMessage("READY", "카카오맵 준비 완료");
         } catch (error) {
-          showError("지도 생성 실패: " + error.message);
+          showError(error.message);
         }
       });
     }
