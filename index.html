@@ -5,14 +5,20 @@
   <meta charset="UTF-8" />
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0,
-             maximum-scale=1.0, user-scalable=no"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
   />
   <title>밥허브 카카오맵</title>
 
   <style>
-    html, body, #map {
+    html, body {
+      width: 100%;
+      height: 100%;
       margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    #map {
       width: 100%;
       height: 100%;
     }
@@ -21,6 +27,7 @@
       display: none;
       padding: 20px;
       color: #c62828;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -29,6 +36,7 @@
   <div id="map"></div>
   <div id="error"></div>
 
+  <!-- 카카오 JavaScript 키를 입력하세요 -->
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=2f35a73f2a362abf560cc7ca7e582092&autoload=false"></script>
 
   <script>
@@ -36,6 +44,7 @@
     let markers = [];
     let activeInfoWindow = null;
 
+    // React Native로 메시지 전달
     function sendMessage(type, message) {
       if (window.ReactNativeWebView) {
         window.ReactNativeWebView.postMessage(
@@ -44,22 +53,32 @@
       }
     }
 
+    // 지도 오류 표시
     function showError(message) {
-      document.getElementById("error").style.display = "block";
-      document.getElementById("error").textContent = message;
+      document.getElementById("map").style.display = "none";
+
+      const error = document.getElementById("error");
+      error.style.display = "block";
+      error.textContent = message;
+
       sendMessage("ERROR", message);
     }
 
+    // 기존 마커 제거
     function clearMarkers() {
       if (activeInfoWindow) {
         activeInfoWindow.close();
         activeInfoWindow = null;
       }
 
-      markers.forEach(marker => marker.setMap(null));
+      markers.forEach((marker) => {
+        marker.setMap(null);
+      });
+
       markers = [];
     }
 
+    // React Native에서 전달받은 음식점 표시
     function setRestaurants(restaurants) {
       if (!map || !Array.isArray(restaurants)) {
         return;
@@ -70,32 +89,37 @@
       const bounds = new kakao.maps.LatLngBounds();
       let validCount = 0;
 
-      restaurants.forEach(restaurant => {
+      restaurants.forEach((restaurant) => {
         const latitude = Number(restaurant.latitude);
         const longitude = Number(restaurant.longitude);
 
         if (
           !Number.isFinite(latitude) ||
           !Number.isFinite(longitude) ||
-          latitude < -90 || latitude > 90 ||
-          longitude < -180 || longitude > 180
+          latitude < -90 ||
+          latitude > 90 ||
+          longitude < -180 ||
+          longitude > 180
         ) {
           return;
         }
 
+        // 음식점 위치
         const position = new kakao.maps.LatLng(
           latitude,
           longitude
         );
 
+        // 마커 생성
         const marker = new kakao.maps.Marker({
           position: position,
           map: map
         });
 
+        // 정보창 생성
         const infoContent = document.createElement("div");
         infoContent.style.padding = "10px";
-        infoContent.style.minWidth = "150px";
+        infoContent.style.minWidth = "160px";
 
         const name = document.createElement("strong");
         name.textContent = String(restaurant.name || "");
@@ -107,14 +131,24 @@
           restaurant.address || ""
         );
 
+        const category = document.createElement("div");
+        category.style.fontSize = "12px";
+        category.style.color = "#FF7A00";
+        category.style.marginTop = "4px";
+        category.textContent = String(
+          restaurant.category || ""
+        );
+
         infoContent.appendChild(name);
         infoContent.appendChild(address);
+        infoContent.appendChild(category);
 
         const infoWindow = new kakao.maps.InfoWindow({
           content: infoContent,
           removable: true
         });
 
+        // 마커 클릭 이벤트
         kakao.maps.event.addListener(
           marker,
           "click",
@@ -138,33 +172,46 @@
         validCount++;
       });
 
+      // 음식점이 있으면 해당 위치로 지도 이동
       if (validCount > 0) {
         map.setBounds(bounds);
+
+        // 음식점 좌표가 가까울 때 지도 확대 수준 조정
+        if (map.getLevel() < 3) {
+          map.setLevel(3);
+        }
       }
 
+      // React Native에 마커 개수 전달
       sendMessage("MARKERS_UPDATED", validCount);
     }
 
+    // React Native WebView에서 호출할 함수
     window.setRestaurants = setRestaurants;
 
+    // 카카오맵 초기화
     if (typeof kakao === "undefined" || !kakao.maps) {
-      showError("카카오맵 SDK 로딩 실패");
+      showError("카카오맵 SDK를 불러오지 못했습니다.");
     } else {
       kakao.maps.load(function () {
         try {
-          map = new kakao.maps.Map(
-            document.getElementById("map"),
-            {
-              center: new kakao.maps.LatLng(
-                37.5665, 126.9780
-              ),
-              level: 4
-            }
-          );
+          const container = document.getElementById("map");
+
+          const options = {
+            center: new kakao.maps.LatLng(
+              37.5665,
+              126.9780
+            ),
+            level: 4
+          };
+
+          map = new kakao.maps.Map(container, options);
 
           sendMessage("READY", "카카오맵 준비 완료");
         } catch (error) {
-          showError(error.message);
+          showError(
+            "카카오맵 생성 실패: " + error.message
+          );
         }
       });
     }
